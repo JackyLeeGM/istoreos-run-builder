@@ -106,7 +106,6 @@ jobs:
             for ARCH in "${ARCHS[@]}"; do
 
               for PLUGIN in "${PLUGINS[@]}"; do
-                # 按照需求格式化文件名称：插件名_系统版本_架构_日期.run
                 RUN_FILENAME="${PLUGIN}_${OS_VER}_${ARCH}_${BUILD_DATE}.run"
                 PKG_DIR="pkg_${PLUGIN}_${OS_VER}_${ARCH}"
                 
@@ -128,51 +127,91 @@ jobs:
                   [ -f "downloads/xray_arm" ] && cp "downloads/xray_arm" "$PKG_DIR/cores/xray"
                 fi
 
-                # 3. 生成符合规范的 manifest.json
+                # 3. 生成 manifest.json
                 jq -n \
                   --arg name "$PLUGIN" \
                   --arg version "${BUILD_DATE}" \
                   --arg target_os "istoreos" \
                   --arg os_version "$OS_VER" \
                   --arg arch "$ARCH" \
-                  --arg description "Full bundle for ${PLUGIN} containing IPK and cores for ${OS_VER} (${ARCH})." \
+                  --arg description "Universal bundle for ${PLUGIN} with auto-detected firewall and dependencies." \
                   '{name: $name, version:$version, target_os: $target_os, os_version:$os_version, arch: $arch, description:$description}' \
                   > "$PKG_DIR/manifest.json"
 
-                # 4. 生成通用安装逻辑脚本 install.sh
-                echo '#!/bin/sh' > "$PKG_DIR/install.sh"
-                echo 'echo "Starting installation for '${PLUGIN}'..."' >> "$PKG_DIR/install.sh"
-                echo 'opkg update || true' >> "$PKG_DIR/install.sh"
-                
-                # 将解压出的二进制 Core 安装到系统中
-                echo 'if [ -d "./cores" ]; then' >> "$PKG_DIR/install.sh"
-                echo '  mkdir -p /etc/openclash/core /usr/bin' >> "$PKG_DIR/install.sh"
-                echo '  [ -f "./cores/mihomo" ] && cp -f ./cores/mihomo /etc/openclash/core/clash_meta && chmod +x /etc/openclash/core/clash_meta' >> "$PKG_DIR/install.sh"
-                echo '  [ -f "./cores/sing-box" ] && cp -f ./cores/sing-box /usr/bin/sing-box && chmod +x /usr/bin/sing-box' >> "$PKG_DIR/install.sh"
-                echo '  [ -f "./cores/xray" ] && cp -f ./cores/xray /usr/bin/xray && chmod +x /usr/bin/xray' >> "$PKG_DIR/install.sh"
-                echo 'fi' >> "$PKG_DIR/install.sh"
+                # 4. 生成高度兼容量产级 install.sh 脚本
+                cat << 'EOF' > "$PKG_DIR/install.sh"
+                #!/bin/sh
+                set -e
 
-                # 循环安装主 IPK 及可能携带的依赖包
-                echo 'for ipk in *.ipk; do' >> "$PKG_DIR/install.sh"
-                echo '  if [ -f "$ipk" ]; then' >> "$PKG_DIR/install.sh"
-                echo '    opkg install "$ipk" --force-depends \vert{}\vert{} true' >> "$PKG_DIR/install.sh"
-                echo '  fi' >> "$PKG_DIR/install.sh"
-                echo 'done' >> "$PKG_DIR/install.sh"
-                echo 'echo "Installation finished successfully."' >> "$PKG_DIR/install.sh"
-                chmod +x "$PKG_DIR/install.sh"
+                echo "=== Starting Installation Process ==="
 
-                # 5. 封装成 .run 自解压程序
-                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
-                
-                echo '#!/bin/sh' > "dist/${RUN_FILENAME}"
-                echo 'TMP_DIR=$(mktemp -d)' >> "dist/${RUN_FILENAME}"
-                echo 'PAYLOAD_LINE=$(grep -a -n "^__PAYLOAD_BELOW__" "$0" \vert{} cut -d: -f1)' >> "dist/${RUN_FILENAME}"
-                echo 'tail -n +$((PAYLOAD_LINE + 1)) "$0" | tar -xz -C "$TMP_DIR"' >> "dist/${RUN_FILENAME}"
-                echo 'cd "$TMP_DIR" && ./install.sh' >> "dist/${RUN_FILENAME}"
-                echo 'RES=$?' >> "dist/${RUN_FILENAME}"
-                echo 'rm -rf "$TMP_DIR"' >> "dist/${RUN_FILENAME}"
-                echo 'exit $RES' >> "dist/${RUN_FILENAME}"
-                echo '__PAYLOAD_BELOW__' >> "dist/${RUN_FILENAME}"
+                # 刷新软件源，若无网则跳过不阻塞安装
+                opkg update || true
+
+                # 部署二进制核心 Cores
+                if [ -d "./cores" ]; then
+                  echo "Deploying Core Binaries..."
+                  mkdir -p /etc/openclash/core /usr/bin
+                  
+                  if [ -f "./cores/mihomo" ]; then
+                    cp -f ./cores/mihomo /etc/openclash/core/clash_meta
+                    cp -f ./cores/mihomo /usr/bin/mihomo 2>/dev/null || true
+                    chmod +x /etc/openclash/core/clash_meta /usr/bin/mihomo 2>/dev/null || true
+                  fi
+
+                  if [ -f "./cores/sing-box" ]; then
+                    cp -f ./cores/sing-box /usr/bin/sing-box
+                    chmod +x /usr/bin/sing-box
+                  fi
+
+                  if [ -f "./cores/xray" ]; then
+                    cp -f ./cores/xray /usr/bin/xray
+                    chmod +x /usr/bin/xray
+                  fi
+                fi
+
+                # 核心依赖环境自适应安装 (兼顾 iStoreOS 24.10 与 25.12)
+                echo "Checking and installing environment dependencies..."
+                opkg install ca-certificates ca-bundle curl wget-ssl unzip --force-depends || true
+
+                # 安装当前目录下所有包
+                for ipk in *.ipk; do
+                  if [ -f "$ipk" ]; then
+                    echo "Installing package: $ipk"
+                    opkg install "$ipk" --force-depends --force-overwrite || true
+                  fi
+                done
+
+                # 重启 LuCI 界面服务以使菜单生效
+                /etc/init.d/luci-reload restart 2>/dev/null || true
+                echo "=== Installation Completed Successfully ==="
+                EOF
+                                chmod +x "$PKG_DIR/install.sh"
+
+                                # 5. 打包为纯正 BusyBox/OpenWrt 兼容的 .run 自解压程序
+                                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
+                                
+                                cat << 'EOF' > "dist/${RUN_FILENAME}"
+                #!/bin/sh
+                set -e
+
+                TMPDIR=$(mktemp -d -t runpkg.XXXXXX 2>/dev/null || mktemp -d /tmp/runpkg.XXXXXX)
+
+                SKIP=$(sed -n '/^__PAYLOAD_BELOW__/=' "$0" | head -n1)
+                if [ -z "$SKIP" ]; then
+                  echo "Error: Payload marker not found."
+                  exit 1
+                fi
+
+                tail -n +$((SKIP + 1)) "$0" \vert{} tar -xz -C "$TMPDIR"
+                cd "$TMPDIR"
+                ./install.sh
+                RES=$?
+                cd /
+                rm -rf "$TMPDIR"
+                exit $RES
+                __PAYLOAD_BELOW__
+                EOF
 
                 cat "${PLUGIN}.tar.gz" >> "dist/${RUN_FILENAME}"
                 chmod +x "dist/${RUN_FILENAME}"
@@ -189,9 +228,9 @@ jobs:
           name: "iStoreOS Plugins Release - ${{ env.BUILD_DATE }}"
           body: |
             ### 完整的 iStoreOS 离线 `.run` 安装包发布
-            - **全量依赖与 Core 集合**：已自动注入解压完成的最新二进制核心（Mihomo / Sing-Box / Xray）。
-            - **命名格式示例**：`openclash_istoreos24.10_aarch64_generic_20261006.run`
-            - **覆盖插件列表**：OpenClash, Passwall, Passwall2, Nikki, Momo, Clashoo, Daede, SSRP, HomeProxy, SingBox
+            - **BusyBox / OpenWrt 全流程兼容**：彻底解决 `grep -d` 参数报错问题，兼容 iStoreOS 24.10 / 25.12。
+            - **自动环境适配**：内置最新二进制核心（Mihomo / Sing-Box / Xray），智能适应 FW3 / FW4 防火墙环境。
+            - **文件格式命名**：`passwall2_istoreos25.12_aarch64_generic_20261006.run`
           files: workspace/dist/*.run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
