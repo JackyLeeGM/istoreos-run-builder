@@ -102,7 +102,7 @@ jobs:
                 mkdir -p "$PKG_DIR"
                 
                 # 写入 iStore 一键安装包描述文件 (manifest)
-                cat <<EOF > "$PKG_DIR/manifest.json"
+                cat <<EOF> "$PKG_DIR/manifest.json"
                 {
                   "name": "${PLUGIN}",
                   "version": "${BUILD_DATE}.${BUILD_SEQ}",
