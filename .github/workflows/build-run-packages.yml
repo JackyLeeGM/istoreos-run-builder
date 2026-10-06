@@ -26,7 +26,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl wget tar unzip gzip p7zip-full build-essential python3
+          sudo apt-get install -y jq curl wget tar unzip gzip p7zip-full build-essential
 
       - name: Prepare Download Directories
         run: |
@@ -94,20 +94,16 @@ jobs:
                 
                 mkdir -p "$PKG_DIR"
                 
-                # 生成 manifest.json
-                python3 -c "
-                import json
-                data = {
-                    'name': '${PLUGIN}',
-                    'version': '${BUILD_DATE}.${BUILD_SEQ}',
-                    'target_os': 'istoreos',
-                    'os_version': '${VER}',
-                    'arch': '${ARCH}',
-                    'description': 'Auto-built ${PLUGIN} package containing required binaries and dependencies.'
-                }
-                with open('$PKG_DIR/manifest.json', 'w') as f:
-                    json.dump(data, f, indent=2)
-                "
+                # 使用 jq 稳妥生成 manifest.json（绝不报错）
+                jq -n \
+                  --arg name "$PLUGIN" \
+                  --arg version "${BUILD_DATE}.${BUILD_SEQ}" \
+                  --arg target_os "istoreos" \
+                  --arg os_version "$VER" \
+                  --arg arch "$ARCH" \
+                  --arg description "Auto-built ${PLUGIN} package containing required binaries and dependencies." \
+                  '{name: $name, version:$version, target_os: $target_os, os_version:$os_version, arch: $arch, description:$description}' \
+                  > "$PKG_DIR/manifest.json"
 
                 # 生成 install.sh
                 echo '#!/bin/sh' > "$PKG_DIR/install.sh"
