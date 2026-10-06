@@ -101,7 +101,7 @@ jobs:
                 
                 mkdir -p "$PKG_DIR"
                 
-                # 写入 iStore 一键安装包描述文件 (所有内容必须对齐缩进)
+                # 写入 iStore 一键安装包描述文件 (manifest)
                 cat <<EOF > "$PKG_DIR/manifest.json"
                 {
                   "name": "${PLUGIN}",
@@ -115,15 +115,15 @@ EOF
 
                 # 写入安全安装脚本
                 cat <<'EOF' > "$PKG_DIR/install.sh"
-                #!/bin/sh
-                echo "Installing plugin components..."
-                opkg update || true
-                for ipk in *.ipk; do
-                  if [ -f "$ipk" ]; then
-                    opkg install "$ipk" --force-depends || true
-                  fi
-                done
-                echo "Installation sequence completed."
+#!/bin/sh
+echo "Installing plugin components..."
+opkg update || true
+for ipk in *.ipk; do
+  if [ -f "$ipk" ]; then
+    opkg install "$ipk" --force-depends || true
+  fi
+done
+echo "Installation sequence completed."
 EOF
                 chmod +x "$PKG_DIR/install.sh"
 
@@ -136,15 +136,15 @@ EOF
                 tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
                 
                 cat <<'EOF' > "dist/${RUN_FILENAME}"
-                #!/bin/sh
-                TMP_DIR=$(mktemp -d)
-                PAYLOAD_LINE=$(grep -a -n '^__PAYLOAD_BELOW__' "$0" | cut -d: -f1)
-                tail -n +$((PAYLOAD_LINE + 1)) "$0" | tar -xz -C "$TMP_DIR"
-                cd "$TMP_DIR" && ./install.sh
-                RES=$?
-                rm -rf "$TMP_DIR"
-                exit $RES
-                __PAYLOAD_BELOW__
+#!/bin/sh
+TMP_DIR=$(mktemp -d)
+PAYLOAD_LINE=$(grep -a -n '^__PAYLOAD_BELOW__' "$0" | cut -d: -f1)
+tail -n +$((PAYLOAD_LINE + 1)) "$0" \vert{} tar -xz -C "$TMP_DIR"
+cd "$TMP_DIR" && ./install.sh
+RES=$?
+rm -rf "$TMP_DIR"
+exit $RES
+__PAYLOAD_BELOW__
 EOF
                 cat "${PLUGIN}.tar.gz" >> "dist/${RUN_FILENAME}"
                 chmod +x "dist/${RUN_FILENAME}"
