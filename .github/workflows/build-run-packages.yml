@@ -138,83 +138,64 @@ jobs:
                   '{name: $name, version:$version, target_os: $target_os, os_version:$os_version, arch: $arch, description:$description}' \
                   > "$PKG_DIR/manifest.json"
 
-                # 4. 生成高度兼容量产级 install.sh 脚本
-                cat << 'EOF' > "$PKG_DIR/install.sh"
-                #!/bin/sh
-                set -e
+                # 4. 使用逐行写入规避 YAML 解析截断问题
+                INSTALL_SH="$PKG_DIR/install.sh"
+                echo '#!/bin/sh' > "$INSTALL_SH"
+                echo 'set -e' >> "$INSTALL_SH"
+                echo 'echo "=== Starting Installation Process ==="' >> "$INSTALL_SH"
+                echo 'opkg update || true' >> "$INSTALL_SH"
+                echo 'if [ -d "./cores" ]; then' >> "$INSTALL_SH"
+                echo '  echo "Deploying Core Binaries..."' >> "$INSTALL_SH"
+                echo '  mkdir -p /etc/openclash/core /usr/bin' >> "$INSTALL_SH"
+                echo '  if [ -f "./cores/mihomo" ]; then' >> "$INSTALL_SH"
+                echo '    cp -f ./cores/mihomo /etc/openclash/core/clash_meta' >> "$INSTALL_SH"
+                echo '    cp -f ./cores/mihomo /usr/bin/mihomo 2>/dev/null || true' >> "$INSTALL_SH"
+                echo '    chmod +x /etc/openclash/core/clash_meta /usr/bin/mihomo 2>/dev/null || true' >> "$INSTALL_SH"
+                echo '  fi' >> "$INSTALL_SH"
+                echo '  if [ -f "./cores/sing-box" ]; then' >> "$INSTALL_SH"
+                echo '    cp -f ./cores/sing-box /usr/bin/sing-box' >> "$INSTALL_SH"
+                echo '    chmod +x /usr/bin/sing-box' >> "$INSTALL_SH"
+                echo '  fi' >> "$INSTALL_SH"
+                echo '  if [ -f "./cores/xray" ]; then' >> "$INSTALL_SH"
+                echo '    cp -f ./cores/xray /usr/bin/xray' >> "$INSTALL_SH"
+                echo '    chmod +x /usr/bin/xray' >> "$INSTALL_SH"
+                echo '  fi' >> "$INSTALL_SH"
+                echo 'fi' >> "$INSTALL_SH"
+                echo 'echo "Checking and installing environment dependencies..."' >> "$INSTALL_SH"
+                echo 'opkg install ca-certificates ca-bundle curl wget-ssl unzip --force-depends || true' >> "$INSTALL_SH"
+                echo 'for ipk in *.ipk; do' >> "$INSTALL_SH"
+                echo '  if [ -f "$ipk" ]; then' >> "$INSTALL_SH"
+                echo '    echo "Installing package: $ipk"' >> "$INSTALL_SH"
+                echo '    opkg install "$ipk" --force-depends --force-overwrite \vert{}\vert{} true' >> "$INSTALL_SH"
+                echo '  fi' >> "$INSTALL_SH"
+                echo 'done' >> "$INSTALL_SH"
+                echo '/etc/init.d/luci-reload restart 2>/dev/null || true' >> "$INSTALL_SH"
+                echo 'echo "=== Installation Completed Successfully ==="' >> "$INSTALL_SH"
+                chmod +x "$INSTALL_SH"
 
-                echo "=== Starting Installation Process ==="
+                # 5. 打包为纯正 BusyBox/OpenWrt 兼容的 .run 自解压程序
+                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
+                
+                RUN_HEAD="dist/${RUN_FILENAME}"
+                echo '#!/bin/sh' > "$RUN_HEAD"
+                echo 'set -e' >> "$RUN_HEAD"
+                echo 'TMPDIR=$(mktemp -d -t runpkg.XXXXXX 2>/dev/null \vert{}\vert{} mktemp -d /tmp/runpkg.XXXXXX)' >> "$RUN_HEAD"
+                echo 'SKIP=$(sed -n '\''/^__PAYLOAD_BELOW__/='\'' "$0" \vert{} head -n1)' >> "$RUN_HEAD"
+                echo 'if [ -z "$SKIP" ]; then' >> "$RUN_HEAD"
+                echo '  echo "Error: Payload marker not found."' >> "$RUN_HEAD"
+                echo '  exit 1' >> "$RUN_HEAD"
+                echo 'fi' >> "$RUN_HEAD"
+                echo 'tail -n +$((SKIP + 1)) "$0" | tar -xz -C "$TMPDIR"' >> "$RUN_HEAD"
+                echo 'cd "$TMPDIR"' >> "$RUN_HEAD"
+                echo './install.sh' >> "$RUN_HEAD"
+                echo 'RES=$?' >> "$RUN_HEAD"
+                echo 'cd /' >> "$RUN_HEAD"
+                echo 'rm -rf "$TMPDIR"' >> "$RUN_HEAD"
+                echo 'exit $RES' >> "$RUN_HEAD"
+                echo '__PAYLOAD_BELOW__' >> "$RUN_HEAD"
 
-                # 刷新软件源，若无网则跳过不阻塞安装
-                opkg update || true
-
-                # 部署二进制核心 Cores
-                if [ -d "./cores" ]; then
-                  echo "Deploying Core Binaries..."
-                  mkdir -p /etc/openclash/core /usr/bin
-                  
-                  if [ -f "./cores/mihomo" ]; then
-                    cp -f ./cores/mihomo /etc/openclash/core/clash_meta
-                    cp -f ./cores/mihomo /usr/bin/mihomo 2>/dev/null || true
-                    chmod +x /etc/openclash/core/clash_meta /usr/bin/mihomo 2>/dev/null || true
-                  fi
-
-                  if [ -f "./cores/sing-box" ]; then
-                    cp -f ./cores/sing-box /usr/bin/sing-box
-                    chmod +x /usr/bin/sing-box
-                  fi
-
-                  if [ -f "./cores/xray" ]; then
-                    cp -f ./cores/xray /usr/bin/xray
-                    chmod +x /usr/bin/xray
-                  fi
-                fi
-
-                # 核心依赖环境自适应安装 (兼顾 iStoreOS 24.10 与 25.12)
-                echo "Checking and installing environment dependencies..."
-                opkg install ca-certificates ca-bundle curl wget-ssl unzip --force-depends || true
-
-                # 安装当前目录下所有包
-                for ipk in *.ipk; do
-                  if [ -f "$ipk" ]; then
-                    echo "Installing package: $ipk"
-                    opkg install "$ipk" --force-depends --force-overwrite || true
-                  fi
-                done
-
-                # 重启 LuCI 界面服务以使菜单生效
-                /etc/init.d/luci-reload restart 2>/dev/null || true
-                echo "=== Installation Completed Successfully ==="
-                EOF
-                                chmod +x "$PKG_DIR/install.sh"
-
-                                # 5. 打包为纯正 BusyBox/OpenWrt 兼容的 .run 自解压程序
-                                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
-                                
-                                cat << 'EOF' > "dist/${RUN_FILENAME}"
-                #!/bin/sh
-                set -e
-
-                TMPDIR=$(mktemp -d -t runpkg.XXXXXX 2>/dev/null || mktemp -d /tmp/runpkg.XXXXXX)
-
-                SKIP=$(sed -n '/^__PAYLOAD_BELOW__/=' "$0" | head -n1)
-                if [ -z "$SKIP" ]; then
-                  echo "Error: Payload marker not found."
-                  exit 1
-                fi
-
-                tail -n +$((SKIP + 1)) "$0" \vert{} tar -xz -C "$TMPDIR"
-                cd "$TMPDIR"
-                ./install.sh
-                RES=$?
-                cd /
-                rm -rf "$TMPDIR"
-                exit $RES
-                __PAYLOAD_BELOW__
-                EOF
-
-                cat "${PLUGIN}.tar.gz" >> "dist/${RUN_FILENAME}"
-                chmod +x "dist/${RUN_FILENAME}"
+                cat "${PLUGIN}.tar.gz" >> "$RUN_HEAD"
+                chmod +x "$RUN_HEAD"
                 rm -rf "$PKG_DIR" "${PLUGIN}.tar.gz"
 
               done
