@@ -30,7 +30,7 @@ jobs:
 
       - name: Prepare Download Directories
         run: |
-          mkdir -p workspace/{dist,tmp}
+          mkdir -p workspace/dist workspace/tmp
           echo "Workspace initialized."
 
       - name: Fetch and Process Plugins
@@ -44,49 +44,49 @@ jobs:
           # 1. OpenClash
           echo "Processing OpenClash..."
           OC_RELEASE=$(curl -s https://api.github.com/repos/vernesong/OpenClash/releases/latest)
-          OC_URL=$(echo "$OC_RELEASE" | jq -r '.assets[] | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          OC_URL=$(echo "$OC_RELEASE" | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
           if [ -n "$OC_URL" ] && [ "$OC_URL" != "null" ]; then
-            wget -q "$OC_URL" -O tmp/luci-app-openclash.ipk
+            wget -q "$OC_URL" -O tmp/luci-app-openclash.ipk || true
           fi
 
           # 2. Passwall & Passwall2
           echo "Processing Passwall & Passwall2..."
-          PW_URL=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall/releases/latest | jq -r '.assets[] | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          PW2_URL=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest | jq -r '.assets[] | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          [ -n "$PW_URL" ] && [ "$PW_URL" != "null" ] && wget -q "$PW_URL" -O tmp/luci-app-passwall.ipk
-          [ -n "$PW2_URL" ] && [ "$PW2_URL" != "null" ] && wget -q "$PW2_URL" -O tmp/luci-app-passwall2.ipk
+          PW_URL=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          PW2_URL=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          [ -n "$PW_URL" ] && [ "$PW_URL" != "null" ] && wget -q "$PW_URL" -O tmp/luci-app-passwall.ipk || true
+          [ -n "$PW2_URL" ] && [ "$PW2_URL" != "null" ] && wget -q "$PW2_URL" -O tmp/luci-app-passwall2.ipk || true
 
           # 3. SSRP (Mihomo Core)
           echo "Processing SSRP Core..."
-          SSRP_URL=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url' | head -n 1)
-          [ -n "$SSRP_URL" ] && [ "$SSRP_URL" != "null" ] && wget -q "$SSRP_URL" -O tmp/mihomo-linux-amd64.gz
+          SSRP_URL=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-amd64")) | .browser_download_url' | head -n 1)
+          [ -n "$SSRP_URL" ] && [ "$SSRP_URL" != "null" ] && wget -q "$SSRP_URL" -O tmp/mihomo-linux-amd64.gz || true
 
           # 4. Nikki & Momo
           echo "Processing Nikki & Momo..."
-          NIKKI_URL=$(curl -s https://api.github.com/repos/nikkinikki-org/OpenWrt-nikki/releases/latest | jq -r '.assets[] | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          MOMO_URL=$(curl -s https://api.github.com/repos/nikkinikki-org/OpenWrt-momo/releases/latest | jq -r '.assets[] | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          [ -n "$NIKKI_URL" ] && [ "$NIKKI_URL" != "null" ] && wget -q "$NIKKI_URL" -O tmp/luci-app-nikki.ipk
-          [ -n "$MOMO_URL" ] && [ "$MOMO_URL" != "null" ] && wget -q "$MOMO_URL" -O tmp/luci-app-momo.ipk
+          NIKKI_URL=$(curl -s https://api.github.com/repos/nikkinikki-org/OpenWrt-nikki/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          MOMO_URL=$(curl -s https://api.github.com/repos/nikkinikki-org/OpenWrt-momo/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          [ -n "$NIKKI_URL" ] && [ "$NIKKI_URL" != "null" ] && wget -q "$NIKKI_URL" -O tmp/luci-app-nikki.ipk || true
+          [ -n "$MOMO_URL" ] && [ "$MOMO_URL" != "null" ] && wget -q "$MOMO_URL" -O tmp/luci-app-momo.ipk || true
 
           # 5. Clashoo & Daede
           echo "Processing Clashoo & Daede..."
-          CLASHOO_URL=$(curl -s https://api.github.com/repos/kenzok8/openwrt-clashoo/releases | jq -r '.[0].assets[] | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          DAEDE_URL=$(curl -s https://api.github.com/repos/kenzok8/openwrt-daede/releases | jq -r '.[0].assets[] | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          [ -n "$CLASHOO_URL" ] && [ "$CLASHOO_URL" != "null" ] && wget -q "$CLASHOO_URL" -O tmp/luci-app-clashoo.ipk
-          [ -n "$DAEDE_URL" ] && [ "$DAEDE_URL" != "null" ] && wget -q "$DAEDE_URL" -O tmp/luci-app-daede.ipk
+          CLASHOO_URL=$(curl -s https://api.github.com/repos/kenzok8/openwrt-clashoo/releases | jq -r '.[0].assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          DAEDE_URL=$(curl -s https://api.github.com/repos/kenzok8/openwrt-daede/releases | jq -r '.[0].assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          [ -n "$CLASHOO_URL" ] && [ "$CLASHOO_URL" != "null" ] && wget -q "$CLASHOO_URL" -O tmp/luci-app-clashoo.ipk || true
+          [ -n "$DAEDE_URL" ] && [ "$DAEDE_URL" != "null" ] && wget -q "$DAEDE_URL" -O tmp/luci-app-daede.ipk || true
 
           # 6. Cores (sing-box & xray-core)
           echo "Processing Cores..."
-          SINGBOX_URL=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases | jq -r '.[0].assets[] | select(.name | contains("linux-amd64")) | .browser_download_url' | head -n 1)
-          XRAY_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[0].assets[] | select(.name | contains("64.zip")) | .browser_download_url' | head -n 1)
-          [ -n "$SINGBOX_URL" ] && [ "$SINGBOX_URL" != "null" ] && wget -q "$SINGBOX_URL" -O tmp/sing-box.tar.gz
-          [ -n "$XRAY_URL" ] && [ "$XRAY_URL" != "null" ] && wget -q "$XRAY_URL" -O tmp/xray.zip
+          SINGBOX_URL=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases | jq -r '.[0].assets[]? | select(.name | contains("linux-amd64")) | .browser_download_url' | head -n 1)
+          XRAY_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[0].assets[]? | select(.name | contains("64.zip")) | .browser_download_url' | head -n 1)
+          [ -n "$SINGBOX_URL" ] && [ "$SINGBOX_URL" != "null" ] && wget -q "$SINGBOX_URL" -O tmp/sing-box.tar.gz || true
+          [ -n "$XRAY_URL" ] && [ "$XRAY_URL" != "null" ] && wget -q "$XRAY_URL" -O tmp/xray.zip || true
 
       - name: Package iStoreOS .run Installers
         run: |
           cd workspace
-          
-          PLUGINS=("passwall" "passwall2" "openclash" "nikki" "momo" "clashoo" "daede" "homeproxy")
+
+          PLUGINS=("passwall" "passwall2" "openclash" "nikki" "momo" "clashoo" "daede" "homeproxy" "ssrp")
           VERSIONS=("24.10" "25.12")
           ARCHS=("x86_64" "a53")
 
