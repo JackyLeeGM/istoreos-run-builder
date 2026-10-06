@@ -30,102 +30,130 @@ jobs:
 
       - name: Prepare Download Directories
         run: |
-          mkdir -p workspace/dist workspace/tmp
+          mkdir -p workspace/dist workspace/downloads
           echo "Workspace initialized."
 
-      - name: Fetch and Process Plugins
+      - name: Download All Cores & Plugins
         run: |
-          cd workspace
+          cd workspace/downloads
 
-          ARCH_X86="x86_64"
-          ARCH_ARM="aarch64_cortex-a53"
+          echo "=== 1. Downloading Core Binaries ==="
+          # Mihomo (Clash Meta)
+          MIHOMO_X86_URL=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-amd64-compatible") and (endswith(".gz") or endswith(".tar.gz"))) | .browser_download_url' | head -n 1)
+          MIHOMO_ARM_URL=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-arm64") and (endswith(".gz") or endswith(".tar.gz"))) | .browser_download_url' | head -n 1)
+          [ -n "$MIHOMO_X86_URL" ] && wget -q "$MIHOMO_X86_URL" -O mihomo_x86.gz && gunzip -f mihomo_x86.gz && chmod +x mihomo_x86 || true
+          [ -n "$MIHOMO_ARM_URL" ] && wget -q "$MIHOMO_ARM_URL" -O mihomo_arm.gz && gunzip -f mihomo_arm.gz && chmod +x mihomo_arm || true
 
-          echo "Processing OpenClash..."
-          OC_RELEASE=$(curl -s https://api.github.com/repos/vernesong/OpenClash/releases/latest)
-          OC_URL=$(echo "$OC_RELEASE" | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          if [ -n "$OC_URL" ] && [ "$OC_URL" != "null" ]; then
-            wget -q "$OC_URL" -O tmp/luci-app-openclash.ipk || true
-          fi
+          # Sing-Box Core
+          SINGBOX_X86_URL=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-amd64.tar.gz")) | .browser_download_url' | head -n 1)
+          SINGBOX_ARM_URL=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-arm64.tar.gz")) | .browser_download_url' | head -n 1)
+          [ -n "$SINGBOX_X86_URL" ] && wget -q "$SINGBOX_X86_URL" -O singbox_x86.tar.gz && tar -xzf singbox_x86.tar.gz && mv sing-box-*/sing-box ./singbox_x86 || true
+          [ -n "$SINGBOX_ARM_URL" ] && wget -q "$SINGBOX_ARM_URL" -O singbox_arm.tar.gz && tar -xzf singbox_arm.tar.gz && mv sing-box-*/sing-box ./singbox_arm || true
 
-          echo "Processing Passwall & Passwall2..."
+          # Xray Core
+          XRAY_X86_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.assets[]? | select(.name | contains("64.zip") and (contains("arm") | not)) | .browser_download_url' | head -n 1)
+          XRAY_ARM_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.assets[]? | select(.name | contains("arm64-v8a.zip")) | .browser_download_url' | head -n 1)
+          [ -n "$XRAY_X86_URL" ] && wget -q "$XRAY_X86_URL" -O xray_x86.zip && unzip -q xray_x86.zip -d xray_x86_dir && mv xray_x86_dir/xray ./xray_x86 || true
+          [ -n "$XRAY_ARM_URL" ] && wget -q "$XRAY_ARM_URL" -O xray_arm.zip && unzip -q xray_arm.zip -d xray_arm_dir && mv xray_arm_dir/xray ./xray_arm || true
+
+          echo "=== 2. Downloading App IPKs ==="
+          # OpenClash
+          OC_URL=$(curl -s https://api.github.com/repos/vernesong/OpenClash/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
+          [ -n "$OC_URL" ] && wget -q "$OC_URL" -O luci-app-openclash.ipk || true
+
+          # Passwall & Passwall2
           PW_URL=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
           PW2_URL=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          [ -n "$PW_URL" ] && [ "$PW_URL" != "null" ] && wget -q "$PW_URL" -O tmp/luci-app-passwall.ipk || true
-          [ -n "$PW2_URL" ] && [ "$PW2_URL" != "null" ] && wget -q "$PW2_URL" -O tmp/luci-app-passwall2.ipk || true
+          [ -n "$PW_URL" ] && wget -q "$PW_URL" -O luci-app-passwall.ipk || true
+          [ -n "$PW2_URL" ] && wget -q "$PW2_URL" -O luci-app-passwall2.ipk || true
 
-          echo "Processing SSRP Core..."
-          SSRP_URL=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-amd64")) | .browser_download_url' | head -n 1)
-          [ -n "$SSRP_URL" ] && [ "$SSRP_URL" != "null" ] && wget -q "$SSRP_URL" -O tmp/mihomo-linux-amd64.gz || true
-
-          echo "Processing Nikki & Momo..."
+          # Nikki & Momo
           NIKKI_URL=$(curl -s https://api.github.com/repos/nikkinikki-org/OpenWrt-nikki/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
           MOMO_URL=$(curl -s https://api.github.com/repos/nikkinikki-org/OpenWrt-momo/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          [ -n "$NIKKI_URL" ] && [ "$NIKKI_URL" != "null" ] && wget -q "$NIKKI_URL" -O tmp/luci-app-nikki.ipk || true
-          [ -n "$MOMO_URL" ] && [ "$MOMO_URL" != "null" ] && wget -q "$MOMO_URL" -O tmp/luci-app-momo.ipk || true
+          [ -n "$NIKKI_URL" ] && wget -q "$NIKKI_URL" -O luci-app-nikki.ipk || true
+          [ -n "$MOMO_URL" ] && wget -q "$MOMO_URL" -O luci-app-momo.ipk || true
 
-          echo "Processing Clashoo & Daede..."
+          # Clashoo & Daede
           CLASHOO_URL=$(curl -s https://api.github.com/repos/kenzok8/openwrt-clashoo/releases | jq -r '.[0].assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
           DAEDE_URL=$(curl -s https://api.github.com/repos/kenzok8/openwrt-daede/releases | jq -r '.[0].assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          [ -n "$CLASHOO_URL" ] && [ "$CLASHOO_URL" != "null" ] && wget -q "$CLASHOO_URL" -O tmp/luci-app-clashoo.ipk || true
-          [ -n "$DAEDE_URL" ] && [ "$DAEDE_URL" != "null" ] && wget -q "$DAEDE_URL" -O tmp/luci-app-daede.ipk || true
+          [ -n "$CLASHOO_URL" ] && wget -q "$CLASHOO_URL" -O luci-app-clashoo.ipk || true
+          [ -n "$DAEDE_URL" ] && wget -q "$DAEDE_URL" -O luci-app-daede.ipk || true
 
-          echo "Processing Cores..."
-          SINGBOX_URL=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases | jq -r '.[0].assets[]? | select(.name | contains("linux-amd64")) | .browser_download_url' | head -n 1)
-          XRAY_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[0].assets[]? | select(.name | contains("64.zip")) | .browser_download_url' | head -n 1)
-          [ -n "$SINGBOX_URL" ] && [ "$SINGBOX_URL" != "null" ] && wget -q "$SINGBOX_URL" -O tmp/sing-box.tar.gz || true
-          [ -n "$XRAY_URL" ] && [ "$XRAY_URL" != "null" ] && wget -q "$XRAY_URL" -O tmp/xray.zip || true
-
-      - name: Package iStoreOS .run Installers
+      - name: Package Bundled iStoreOS .run Installers
         run: |
           cd workspace
 
-          PLUGINS=("passwall" "passwall2" "openclash" "nikki" "momo" "clashoo" "daede" "homeproxy" "ssrp")
-          VERSIONS=("24.10" "25.12")
-          ARCHS=("x86_64" "a53")
+          PLUGINS=("openclash" "passwall" "passwall2" "nikki" "momo" "clashoo" "daede")
+          VERSIONS=("istoreos24.10" "istoreos25.12")
+          ARCHS=("x86_64" "aarch64_cortex-a53")
 
-          BUILD_SEQ=1
-
-          for VER in "${VERSIONS[@]}"; do
+          for OS_VER in "${VERSIONS[@]}"; do
             for ARCH in "${ARCHS[@]}"; do
+              # 转换架构简称
+              ARCH_SHORT="x86_64"
+              if [ "$ARCH" = "aarch64_cortex-a53" ]; then
+                ARCH_SHORT="arm64"
+              fi
+
               for PLUGIN in "${PLUGINS[@]}"; do
+                # 明确命名的包名称：插件名_系统版本_架构_日期.run
+                RUN_FILENAME="${PLUGIN}_${OS_VER}_${ARCH_SHORT}_${BUILD_DATE}.run"
+                PKG_DIR="pkg_${PLUGIN}_${OS_VER}_${ARCH_SHORT}"
                 
-                RUN_FILENAME="${PLUGIN}_${BUILD_DATE}_build${BUILD_SEQ}_${VER}_${ARCH}.run"
-                PKG_DIR="pkg_${PLUGIN}_${VER}_${ARCH}"
+                mkdir -p "$PKG_DIR/cores"
                 
-                mkdir -p "$PKG_DIR"
-                
-                # 使用 jq 稳妥生成 manifest.json（绝不报错）
+                # 1. 复制插件主 IPK 包
+                if [ -f "downloads/luci-app-${PLUGIN}.ipk" ]; then
+                  cp "downloads/luci-app-${PLUGIN}.ipk" "$PKG_DIR/"
+                fi
+
+                # 2. 根据插件注入对应的核心 Binary
+                if [ "$ARCH_SHORT" = "x86_64" ]; then
+                  [ -f "downloads/mihomo_x86" ] && cp "downloads/mihomo_x86" "$PKG_DIR/cores/mihomo"
+                  [ -f "downloads/singbox_x86" ] && cp "downloads/singbox_x86" "$PKG_DIR/cores/sing-box"
+                  [ -f "downloads/xray_x86" ] && cp "downloads/xray_x86" "$PKG_DIR/cores/xray"
+                else
+                  [ -f "downloads/mihomo_arm" ] && cp "downloads/mihomo_arm" "$PKG_DIR/cores/mihomo"
+                  [ -f "downloads/singbox_arm" ] && cp "downloads/singbox_arm" "$PKG_DIR/cores/sing-box"
+                  [ -f "downloads/xray_arm" ] && cp "downloads/xray_arm" "$PKG_DIR/cores/xray"
+                fi
+
+                # 3. 生成符合 iStore 规范的 manifest.json
                 jq -n \
                   --arg name "$PLUGIN" \
-                  --arg version "${BUILD_DATE}.${BUILD_SEQ}" \
+                  --arg version "${BUILD_DATE}" \
                   --arg target_os "istoreos" \
-                  --arg os_version "$VER" \
+                  --arg os_version "$OS_VER" \
                   --arg arch "$ARCH" \
-                  --arg description "Auto-built ${PLUGIN} package containing required binaries and dependencies." \
+                  --arg description "Full bundle for ${PLUGIN} containing IPK and cores for ${OS_VER} (${ARCH_SHORT})." \
                   '{name: $name, version:$version, target_os: $target_os, os_version:$os_version, arch: $arch, description:$description}' \
                   > "$PKG_DIR/manifest.json"
 
-                # 生成 install.sh
+                # 4. 生成安装脚本 install.sh (包含自动将 Core 放置到系统目录的逻辑)
                 echo '#!/bin/sh' > "$PKG_DIR/install.sh"
-                echo 'echo "Installing plugin components..."' >> "$PKG_DIR/install.sh"
+                echo 'echo "Starting installation for '${PLUGIN}'..."' >> "$PKG_DIR/install.sh"
                 echo 'opkg update || true' >> "$PKG_DIR/install.sh"
+                
+                # 释放内核文件到标准路径
+                echo 'if [ -d "./cores" ]; then' >> "$PKG_DIR/install.sh"
+                echo '  mkdir -p /etc/openclash/core /usr/bin' >> "$PKG_DIR/install.sh"
+                echo '  [ -f "./cores/mihomo" ] && cp -f ./cores/mihomo /etc/openclash/core/clash_meta && chmod +x /etc/openclash/core/clash_meta' >> "$PKG_DIR/install.sh"
+                echo '  [ -f "./cores/sing-box" ] && cp -f ./cores/sing-box /usr/bin/sing-box && chmod +x /usr/bin/sing-box' >> "$PKG_DIR/install.sh"
+                echo '  [ -f "./cores/xray" ] && cp -f ./cores/xray /usr/bin/xray && chmod +x /usr/bin/xray' >> "$PKG_DIR/install.sh"
+                echo 'fi' >> "$PKG_DIR/install.sh"
+
+                # 安装 IPK
                 echo 'for ipk in *.ipk; do' >> "$PKG_DIR/install.sh"
                 echo '  if [ -f "$ipk" ]; then' >> "$PKG_DIR/install.sh"
                 echo '    opkg install "$ipk" --force-depends \vert{}\vert{} true' >> "$PKG_DIR/install.sh"
                 echo '  fi' >> "$PKG_DIR/install.sh"
                 echo 'done' >> "$PKG_DIR/install.sh"
-                echo 'echo "Installation sequence completed."' >> "$PKG_DIR/install.sh"
+                echo 'echo "Installation finished successfully."' >> "$PKG_DIR/install.sh"
                 chmod +x "$PKG_DIR/install.sh"
 
-                # 打包依赖文件
-                if [ -f "tmp/luci-app-${PLUGIN}.ipk" ]; then
-                  cp "tmp/luci-app-${PLUGIN}.ipk" "$PKG_DIR/"
-                fi
-
-                # 打包压缩包
+                # 5. 打包为全量自解压 .run 安装包
                 tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
                 
-                # 生成自解压 run 头部文件
                 echo '#!/bin/sh' > "dist/${RUN_FILENAME}"
                 echo 'TMP_DIR=$(mktemp -d)' >> "dist/${RUN_FILENAME}"
                 echo 'PAYLOAD_LINE=$(grep -a -n "^__PAYLOAD_BELOW__" "$0" \vert{} cut -d: -f1)' >> "dist/${RUN_FILENAME}"
@@ -140,7 +168,6 @@ jobs:
                 chmod +x "dist/${RUN_FILENAME}"
                 rm -rf "$PKG_DIR" "${PLUGIN}.tar.gz"
 
-                BUILD_SEQ=$((BUILD_SEQ + 1))
               done
             done
           done
@@ -151,10 +178,10 @@ jobs:
           tag_name: ${{ env.BUILD_TAG }}
           name: "iStoreOS Plugins Release - ${{ env.BUILD_DATE }}"
           body: |
-            Automated build of iStoreOS `.run` plugin packages.
-            - OS Support: iStoreOS 24.10 / 25.12
-            - Architectures: x86_64 / ARM (a53)
-            - Build Date: ${{ env.BUILD_DATE }}
+            ### 完整的 iStoreOS 离线 `.run` 安装包发布
+            - **包含内容**：插件 IPK 文件 + 解压打包好的最新二进制 Core（Mihomo / Sing-Box / Xray）。
+            - **命名格式**：`插件名_系统版本_架构_日期.run`
+            - **使用方法**：直接上传至 iStoreOS 离线安装界面即可。
           files: workspace/dist/*.run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
