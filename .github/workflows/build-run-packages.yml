@@ -37,7 +37,7 @@ jobs:
         run: |
           cd workspace
 
-          echo "=== Downloading Core Binaries ==="
+          echo "=== Downloading Universal Core Binaries ==="
           # Mihomo (Clash Meta Core)
           MIHOMO_X86_URL=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-amd64-compatible") and (endswith(".gz") or endswith(".tar.gz"))) | .browser_download_url' | head -n 1)
           MIHOMO_ARM_URL=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.assets[]? | select(.name | contains("linux-arm64") and (endswith(".gz") or endswith(".tar.gz"))) | .browser_download_url' | head -n 1)
@@ -56,31 +56,30 @@ jobs:
           [ -n "$XRAY_X86_URL" ] && wget -q "$XRAY_X86_URL" -O xray_x86.zip && unzip -q xray_x86.zip -d xray_x86_dir && mv xray_x86_dir/xray downloads_ipk/xray_x86 && cp downloads_ipk/xray_x86 downloads_apk/ || true
           [ -n "$XRAY_ARM_URL" ] && wget -q "$XRAY_ARM_URL" -O xray_arm.zip && unzip -q xray_arm.zip -d xray_arm_dir && mv xray_arm_dir/xray downloads_ipk/xray_arm && cp downloads_ipk/xray_arm downloads_apk/ || true
 
-      - name: Download IPK & APK Packages
+      - name: Download Full IPK & APK Assets for ALL Plugins
         run: |
           cd workspace
 
-          echo "=== Fetching Packages (.ipk & .apk) ==="
-          # Passwall & Passwall2
-          PW_RELEASE=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall/releases/latest)
-          PW2_RELEASE=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest)
+          echo "=== Fetching Full Release Assets & Dependencies (.ipk & .apk) ==="
 
-          # IPK 提取
-          echo "$PW_RELEASE" | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | xargs -n1 wget -q -P downloads_ipk/ || true
-          echo "$PW2_RELEASE" | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | xargs -n1 wget -q -P downloads_ipk/ || true
+          # 定义获取 Github 最新 Release 全量 Assets 的通用函数
+          download_github_assets() {
+            REPO=$1
+            RELEASE_DATA=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest")
+            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | xargs -n1 wget -q -P downloads_ipk/ || true
+            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name | endswith(".apk")) | .browser_download_url' | xargs -n1 wget -q -P downloads_apk/ || true
+          }
 
-          # APK 提取 (用于 iStoreOS 25.12)
-          echo "$PW_RELEASE" | jq -r '.assets[]? | select(.name | endswith(".apk")) | .browser_download_url' | xargs -n1 wget -q -P downloads_apk/ || true
-          echo "$PW2_RELEASE" | jq -r '.assets[]? | select(.name | endswith(".apk")) | .browser_download_url' | xargs -n1 wget -q -P downloads_apk/ || true
+          # 1. 下载全量主插件及其所有关联依赖包（Passwall, Passwall2, OpenClash, Nikki, Momo, HomeProxy, Singbox等）
+          download_github_assets "Openwrt-Passwall/openwrt-passwall"
+          download_github_assets "Openwrt-Passwall/openwrt-passwall2"
+          download_github_assets "vernesong/OpenClash"
+          download_github_assets "nikkinikki-org/OpenWrt-nikki"
+          download_github_assets "nikkinikki-org/OpenWrt-momo"
+          download_github_assets "immortalwrt/homeproxy"
+          download_github_assets "kyuchao/luci-app-sing-box"
 
-          # 通用/第三方仓库拉取 (OpenClash, Nikki, Momo, Clashoo, Daede, SSRP, HomeProxy, Singbox)
-          PLUGINS=("openclash" "nikki" "momo" "clashoo" "daede" "ssrp" "homeproxy" "singbox")
-          
-          # OpenClash IPK
-          OC_URL=$(curl -s https://api.github.com/repos/vernesong/OpenClash/releases/latest | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | head -n 1)
-          [ -n "$OC_URL" ] && wget -q "$OC_URL" -O downloads_ipk/luci-app-openclash.ipk || true
-
-          # Kenzok8 整合源补充
+          # 2. 抓取 Kenzok8 整合依赖仓库的全量包，提供强大的离线兜底依赖池
           KENZOK8_IPKS=$(curl -s https://api.github.com/repos/kenzok8/openwrt-packages/releases | jq -r '.[0].assets[]? | select(.name | endswith(".ipk")) | .browser_download_url')
           for url in $KENZOK8_IPKS; do
             wget -q "$url" -P downloads_ipk/ || true
@@ -91,7 +90,7 @@ jobs:
             wget -q "$url" -P downloads_apk/ || true
           done
 
-      - name: Package Bundled iStoreOS .run Installers
+      - name: Package Bundled Universal .run Installers
         run: |
           cd workspace
 
@@ -112,10 +111,10 @@ jobs:
                 SRC_DIR="downloads_ipk"
                 [ "$OS_VER" = "istoreos25.12" ] && SRC_DIR="downloads_apk"
 
-                # 1. 复制匹配插件的所有包 (包含主包及语言/依赖包)
-                find "$SRC_DIR" -type f \( -name "*${PLUGIN}*" \) -exec cp {} "$PKG_DIR/packages/" \; 2>/dev/null || true
+                # 1. 深度离线打包逻辑：将同环境下所有依赖组件（如 tcping, geoview, chinadns-ng 等）一并全量复制入包
+                cp "$SRC_DIR"/* "$PKG_DIR/packages/" 2>/dev/null || true
 
-                # 2. 注入对应架构的二进制 Core
+                # 2. 注入对应架构的通用二进制 Core
                 if [ "$ARCH" = "x86_64" ]; then
                   [ -f "$SRC_DIR/mihomo_x86" ] && cp "$SRC_DIR/mihomo_x86" "$PKG_DIR/cores/mihomo"
                   [ -f "$SRC_DIR/singbox_x86" ] && cp "$SRC_DIR/singbox_x86" "$PKG_DIR/cores/sing-box"
@@ -133,15 +132,15 @@ jobs:
                   --arg target_os "istoreos" \
                   --arg os_version "$OS_VER" \
                   --arg arch "$ARCH" \
-                  --arg description "Universal bundle for ${PLUGIN} supporting both APK and OPKG package managers." \
+                  --arg description "Universal full-offline package for NanoPi ARM64 series (R2S/R3S/R4S/R5S/R5C/R6S/R76S) and x86_64." \
                   '{name: $name, version:$version, target_os: $target_os, os_version:$os_version, arch: $arch, description:$description}' \
                   > "$PKG_DIR/manifest.json"
 
-                # 4. 生成兼容 APK 和 OPKG 的通用 install.sh 脚本
+                # 4. 生成通用增强型强鲁棒 install.sh 脚本
                 INSTALL_SH="$PKG_DIR/install.sh"
                 echo '#!/bin/sh' > "$INSTALL_SH"
                 echo 'echo "========================================="' >> "$INSTALL_SH"
-                echo 'echo "Starting installation for '${PLUGIN}'..."' >> "$INSTALL_SH"
+                echo 'echo "Starting universal installation for '${PLUGIN}'..."' >> "$INSTALL_SH"
                 echo 'echo "========================================="' >> "$INSTALL_SH"
                 
                 # 部署 Core 二进制
@@ -153,21 +152,31 @@ jobs:
                 echo '  [ -f "./cores/xray" ] && cp -f ./cores/xray /usr/bin/xray && chmod +x /usr/bin/xray 2>/dev/null || true' >> "$INSTALL_SH"
                 echo 'fi' >> "$INSTALL_SH"
 
-                # 自动判定包管理器 (apk vs opkg)
+                # 自动判定包管理器 (APK 体系 vs OPKG 体系)
                 echo 'if command -v apk >/dev/null 2>&1; then' >> "$INSTALL_SH"
                 echo '  echo "-> Detected APK package manager (iStoreOS 25.12+)"' >> "$INSTALL_SH"
                 echo '  apk update || true' >> "$INSTALL_SH"
-                echo '  echo "-> Installing system dependencies..."' >> "$INSTALL_SH"
+                echo '  echo "-> Installing system base tools..."' >> "$INSTALL_SH"
                 echo '  apk add --allow-untrusted ca-certificates curl wget unzip 2>/dev/null || true' >> "$INSTALL_SH"
-                echo '  echo "-> Installing APK packages..."' >> "$INSTALL_SH"
+                
                 echo '  if [ -d "./packages" ]; then' >> "$INSTALL_SH"
+                echo '    echo "-> Phase 1: Pre-installing binary dependencies..."' >> "$INSTALL_SH"
                 echo '    for pkg in ./packages/*.apk; do' >> "$INSTALL_SH"
+                echo '      case "$pkg" in' >> "$INSTALL_SH"
+                echo '        *luci-app-*|*luci-i18n-*) ;;' >> "$INSTALL_SH"
+                echo '        *) [ -f "$pkg" ] && apk add --allow-untrusted "$pkg" 2>/dev/null \vert{}\vert{} true ;;' >> "$INSTALL_SH"
+                echo '      esac' >> "$INSTALL_SH"
+                echo '    done' >> "$INSTALL_SH"
+
+                echo '    echo "-> Phase 2: Installing target LuCI app & language packs..."' >> "$INSTALL_SH"
+                echo '    for pkg in ./packages/*'$PLUGIN'*.apk ./packages/luci-app-'$PLUGIN'*.apk ./packages/luci-i18n-'$PLUGIN'*.apk; do' >> "$INSTALL_SH"
                 echo '      if [ -f "$pkg" ]; then' >> "$INSTALL_SH"
                 echo '        echo "Installing $pkg..."' >> "$INSTALL_SH"
-                echo '        apk add --allow-untrusted "$pkg" || true' >> "$INSTALL_SH"
+                echo '        apk add --allow-untrusted --force-non-repository --force-broken-world "$pkg" \vert{}\vert{} true' >> "$INSTALL_SH"
                 echo '      fi' >> "$INSTALL_SH"
                 echo '    done' >> "$INSTALL_SH"
                 echo '  fi' >> "$INSTALL_SH"
+
                 echo 'elif command -v opkg >/dev/null 2>&1; then' >> "$INSTALL_SH"
                 echo '  echo "-> Detected OPKG package manager (iStoreOS 24.10)"' >> "$INSTALL_SH"
                 echo '  opkg update || true' >> "$INSTALL_SH"
@@ -178,7 +187,7 @@ jobs:
                 echo '    for pkg in ./packages/*.ipk; do' >> "$INSTALL_SH"
                 echo '      if [ -f "$pkg" ]; then' >> "$INSTALL_SH"
                 echo '        echo "Installing $pkg..."' >> "$INSTALL_SH"
-                echo '        opkg install "$pkg" --force-depends --force-overwrite || true' >> "$INSTALL_SH"
+                echo '        opkg install "$pkg" --force-depends --force-overwrite \vert{}\vert{} true' >> "$INSTALL_SH"
                 echo '      fi' >> "$INSTALL_SH"
                 echo '    done' >> "$INSTALL_SH"
                 echo '  fi' >> "$INSTALL_SH"
@@ -202,10 +211,9 @@ jobs:
                 tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
                 
                 RUN_HEAD="dist/${RUN_FILENAME}"
-                echo '#!/bin/sh' > "$RUN_HEAD"
-                echo 'TMPDIR="/tmp/runpkg_$$"' >> "$RUN_HEAD"
+                echo '#!/bin/sh' > "$RUN_HEAD"                 echo 'TMPDIR="/tmp/runpkg_$$"' >> "$RUN_HEAD"
                 echo 'mkdir -p "$TMPDIR"' >> "$RUN_HEAD"
-                echo 'MATCH=$(grep -n "^__PAYLOAD_BELOW__$" "$0" | cut -d: -f1)' >> "$RUN_HEAD"
+                echo 'MATCH=$(grep -n "^__PAYLOAD_BELOW__$" "$0" \vert{} cut -d: -f1)' >> "$RUN_HEAD"
                 echo 'if [ -z "$MATCH" ]; then' >> "$RUN_HEAD"
                 echo '  echo "Error: Payload marker not found in .run file."' >> "$RUN_HEAD"
                 echo '  rm -rf "$TMPDIR"' >> "$RUN_HEAD"
@@ -241,10 +249,10 @@ jobs:
           tag_name: ${{ env.BUILD_TAG }}
           name: "iStoreOS Plugins Release - ${{ env.BUILD_DATE }}"
           body: |
-            ### 离线 `.run` 安装包（全自动化兼容版）
-            - **Native APK 支持**：专为 iStoreOS 25.12+ (Alpine APK 体系) 适配 `.apk` 包安装。
-            - **OPKG 向后兼容**：继续支持 iStoreOS 24.10 (OPKG 体系)。
-            - **自动清理 LuCI 缓存**：内置 `rm -rf /tmp/luci-indexcache` 与 `rpcd restart`，安装完成后即刻在后台菜单呈现。
+            ### 离线 `.run` 安装包（NanoPi 全系 ARM64 通用全量版）
+            - ** NanoPi 全机型通用**：完美适配 NanoPi R2S / R3S / R4S / R5S / R5C / R6S / R76S 等全部 ARM64 路由设备。
+            - **全插件全量依赖打包**：包含 `geoview`, `tcping`, `chinadns-ng` 等离线环境必须的二进制底包。
+            - **分阶段安全部署**：先铺设底层二进制工具，再安装 LuCI 菜单与中文语言包。
           files: workspace/dist/*.run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
