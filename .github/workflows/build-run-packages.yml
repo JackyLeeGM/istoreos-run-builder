@@ -69,7 +69,6 @@ jobs:
             echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name | endswith(".apk")) | .browser_download_url' | xargs -n1 wget -q -P downloads_apk/ || true
           }
 
-          # 1. 下载全量主插件及其所有关联依赖包
           download_github_assets "Openwrt-Passwall/openwrt-passwall"
           download_github_assets "Openwrt-Passwall/openwrt-passwall2"
           download_github_assets "vernesong/OpenClash"
@@ -78,7 +77,6 @@ jobs:
           download_github_assets "immortalwrt/homeproxy"
           download_github_assets "kyuchao/luci-app-sing-box"
 
-          # 2. 抓取 Kenzok8 整合源包作为兜底依赖池
           KENZOK8_IPKS=$(curl -s https://api.github.com/repos/kenzok8/openwrt-packages/releases | jq -r '.[0].assets[]? | select(.name | endswith(".ipk")) | .browser_download_url')
           for url in $KENZOK8_IPKS; do
             wget -q "$url" -P downloads_ipk/ || true
@@ -109,10 +107,8 @@ jobs:
                 SRC_DIR="downloads_ipk"
                 [ "$OS_VER" = "istoreos25.12" ] && SRC_DIR="downloads_apk"
 
-                # 1. 复制所有底层依赖包
                 cp "$SRC_DIR"/* "$PKG_DIR/packages/" 2>/dev/null || true
 
-                # 2. 注入对应架构的 Core
                 if [ "$ARCH" = "x86_64" ]; then
                   [ -f "$SRC_DIR/mihomo_x86" ] && cp "$SRC_DIR/mihomo_x86" "$PKG_DIR/cores/mihomo"
                   [ -f "$SRC_DIR/singbox_x86" ] && cp "$SRC_DIR/singbox_x86" "$PKG_DIR/cores/sing-box"
@@ -123,7 +119,6 @@ jobs:
                   [ -f "$SRC_DIR/xray_arm" ] && cp "$SRC_DIR/xray_arm" "$PKG_DIR/cores/xray"
                 fi
 
-                # 3. 生成 manifest.json
                 jq -n \
                   --arg name "$PLUGIN" \
                   --arg version "${BUILD_DATE}" \
@@ -131,109 +126,107 @@ jobs:
                   --arg os_version "$OS_VER" \
                   --arg arch "$ARCH" \
                   --arg description "Universal full-offline package for NanoPi ARM64 series and x86_64." \
-                  '{name: $name, version: $version, target_os: $target_os, os_version: $os_version, arch: $arch, description: $description}' \
+                  '{name: $name, version:$version, target_os: $target_os, os_version:$os_version, arch: $arch, description:$description}' \
                   > "$PKG_DIR/manifest.json"
 
-                # 4. 生成兼容与强鲁棒的 install.sh
                 INSTALL_SH="$PKG_DIR/install.sh"
-                cat << 'EOF_INSTALL' > "$INSTALL_SH"
-                #!/bin/sh
-                echo "========================================="
-                echo "Starting universal installation..."
-                echo "========================================="
+                cat << 'EOF' > "$INSTALL_SH"
+#!/bin/sh
+echo "========================================="
+echo "Starting universal installation..."
+echo "========================================="
 
-                if [ -d "./cores" ]; then
-                  echo "-> Deploying core binaries..."
-                  mkdir -p /etc/openclash/core /usr/bin
-                  [ -f "./cores/mihomo" ] && cp -f ./cores/mihomo /etc/openclash/core/clash_meta && cp -f ./cores/mihomo /usr/bin/mihomo && chmod +x /etc/openclash/core/clash_meta /usr/bin/mihomo 2>/dev/null || true
-                  [ -f "./cores/sing-box" ] && cp -f ./cores/sing-box /usr/bin/sing-box && chmod +x /usr/bin/sing-box 2>/dev/null || true
-                  [ -f "./cores/xray" ] && cp -f ./cores/xray /usr/bin/xray && chmod +x /usr/bin/xray 2>/dev/null || true
-                fi
+if [ -d "./cores" ]; then
+  echo "-> Deploying core binaries..."
+  mkdir -p /etc/openclash/core /usr/bin
+  [ -f "./cores/mihomo" ] && cp -f ./cores/mihomo /etc/openclash/core/clash_meta && cp -f ./cores/mihomo /usr/bin/mihomo && chmod +x /etc/openclash/core/clash_meta /usr/bin/mihomo 2>/dev/null || true
+  [ -f "./cores/sing-box" ] && cp -f ./cores/sing-box /usr/bin/sing-box && chmod +x /usr/bin/sing-box 2>/dev/null || true
+  [ -f "./cores/xray" ] && cp -f ./cores/xray /usr/bin/xray && chmod +x /usr/bin/xray 2>/dev/null || true
+fi
 
-                if command -v apk >/dev/null 2>&1; then
-                  echo "-> Detected APK package manager (iStoreOS 25.12+)"
-                  apk update || true
-                  echo "-> Installing system base tools..."
-                  apk add --allow-untrusted ca-certificates curl wget unzip 2>/dev/null || true
-                  
-                  if [ -d "./packages" ]; then
-                    echo "-> Phase 1: Pre-installing binary dependencies..."
-                    for pkg in ./packages/*.apk; do
-                      case "$pkg" in
-                        *luci-app-*|*luci-i18n-*) ;;
-                        *) [ -f "$pkg" ] && apk add --allow-untrusted "$pkg" 2>/dev/null || true ;;
-                      esac
-                    done
+if command -v apk >/dev/null 2>&1; then
+  echo "-> Detected APK package manager (iStoreOS 25.12+)"
+  apk update || true
+  echo "-> Installing system base tools..."
+  apk add --allow-untrusted ca-certificates curl wget unzip 2>/dev/null || true
+  
+  if [ -d "./packages" ]; then
+    echo "-> Phase 1: Pre-installing binary dependencies..."
+    for pkg in ./packages/*.apk; do
+      case "$pkg" in
+        *luci-app-*|*luci-i18n-*) ;;
+        *) [ -f "$pkg" ] && apk add --allow-untrusted "$pkg" 2>/dev/null || true ;;
+      esac
+    done
 
-                    echo "-> Phase 2: Installing LuCI apps and language packages..."
-                    for pkg in ./packages/*.apk; do
-                      if [ -f "$pkg" ]; then
-                        echo "Installing $pkg..."
-                        apk add --allow-untrusted --force-non-repository --force-broken-world "$pkg" || true
-                      fi
-                    done
-                  fi
+    echo "-> Phase 2: Installing LuCI apps & language packages..."
+    for pkg in ./packages/*.apk; do
+      if [ -f "$pkg" ]; then
+        echo "Installing $pkg..."
+        apk add --allow-untrusted --force-non-repository --force-broken-world "$pkg" || true
+      fi
+    done
+  fi
 
-                elif command -v opkg >/dev/null 2>&1; then
-                  echo "-> Detected OPKG package manager (iStoreOS 24.10)"
-                  opkg update || true
-                  echo "-> Installing system dependencies..."
-                  opkg install ca-certificates ca-bundle curl wget-ssl unzip --force-depends || true
-                  echo "-> Installing IPK packages..."
-                  if [ -d "./packages" ]; then
-                    for pkg in ./packages/*.ipk; do
-                      if [ -f "$pkg" ]; then
-                        echo "Installing $pkg..."
-                        opkg install "$pkg" --force-depends --force-overwrite || true
-                      fi
-                    done
-                  fi
-                else
-                  echo "Error: Neither apk nor opkg package manager found!"
-                  exit 1
-                fi
+elif command -v opkg >/dev/null 2>&1; then
+  echo "-> Detected OPKG package manager (iStoreOS 24.10)"
+  opkg update || true
+  echo "-> Installing system dependencies..."
+  opkg install ca-certificates ca-bundle curl wget-ssl unzip --force-depends || true
+  echo "-> Installing IPK packages..."
+  if [ -d "./packages" ]; then
+    for pkg in ./packages/*.ipk; do
+      if [ -f "$pkg" ]; then
+        echo "Installing $pkg..."
+        opkg install "$pkg" --force-depends --force-overwrite || true
+      fi
+    done
+  fi
+else
+  echo "Error: Neither apk nor opkg package manager found!"
+  exit 1
+fi
 
-                echo "-> Refreshing LuCI menu and services..."
-                rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
-                /etc/init.d/luci-reload restart 2>/dev/null || true
-                /etc/init.d/rpcd restart 2>/dev/null || true
+echo "-> Refreshing LuCI menu and services..."
+rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
+/etc/init.d/luci-reload restart 2>/dev/null || true
+/etc/init.d/rpcd restart 2>/dev/null || true
 
-                echo "========================================="
-                echo "Installation finished successfully!"
-                echo "========================================="
-                EOF_INSTALL
-                                chmod +x "$INSTALL_SH"
+echo "========================================="
+echo "Installation finished successfully!"
+echo "========================================="
+EOF
+                chmod +x "$INSTALL_SH"
 
-                                # 5. 生成标准的 .run 自解压结构（使用安全 cat 语法）
-                                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
-                                RUN_HEAD="dist/${RUN_FILENAME}"
-
-                                cat << 'EOF_RUN' > "$RUN_HEAD"
-                #!/bin/sh
-                TMPDIR="/tmp/runpkg_$$"
-                mkdir -p "$TMPDIR"
-                MATCH=$(grep -n "^__PAYLOAD_BELOW__$" "$0" | cut -d: -f1)
-                if [ -z "$MATCH" ]; then
-                  echo "Error: Payload marker not found in .run file."
-                  rm -rf "$TMPDIR"
-                  exit 1
-                fi
-                PAYLOAD_LINE=$((MATCH + 1))
-                tail -n +$PAYLOAD_LINE "$0" | tar -xz -C "$TMPDIR"
-                cd "$TMPDIR"
-                if [ -f "./install.sh" ]; then
-                  chmod +x ./install.sh
-                  ./install.sh
-                  RES=$?
-                else
-                  echo "Error: install.sh not found inside package."
-                  RES=1
-                fi
-                cd /
-                rm -rf "$TMPDIR"
-                exit $RES
-                __PAYLOAD_BELOW__
-                EOF_RUN
+                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
+                
+                RUN_HEAD="dist/${RUN_FILENAME}"
+                cat << 'EOF' > "$RUN_HEAD"
+#!/bin/sh
+TMPDIR="/tmp/runpkg_$$"
+mkdir -p "$TMPDIR"
+MATCH=$(grep -n "^__PAYLOAD_BELOW__$" "$0" | cut -d: -f1)
+if [ -z "$MATCH" ]; then
+  echo "Error: Payload marker not found in .run file."
+  rm -rf "$TMPDIR"
+  exit 1
+fi
+PAYLOAD_LINE=$((MATCH + 1))
+tail -n +$PAYLOAD_LINE "$0" \vert{} tar -xz -C "$TMPDIR"
+cd "$TMPDIR"
+if [ -f "./install.sh" ]; then
+  chmod +x ./install.sh
+  ./install.sh
+  RES=$?
+else
+  echo "Error: install.sh not found inside package."
+  RES=1
+fi
+cd /
+rm -rf "$TMPDIR"
+exit $RES
+__PAYLOAD_BELOW__
+EOF
 
                 cat "${PLUGIN}.tar.gz" >> "$RUN_HEAD"
                 chmod +x "$RUN_HEAD"
@@ -249,9 +242,9 @@ jobs:
           tag_name: ${{ env.BUILD_TAG }}
           name: "iStoreOS Plugins Release - ${{ env.BUILD_DATE }}"
           body: |
-            ### 离线 `.run` 安装包（全机型 & 全插件优化版）
-            - **修复自解压脚本头**：彻底修复之前的 `can't open 'echo TMPDIR...'` 执行语法错误。
-            - **全插件及全量依赖内置**：集成所有插件运行所需的二进制核心和第三方依赖包。
+            ### 离线 `.run` 安装包（NanoPi 及全机型优化版）
+            - **彻底修复 EOF 语法报错**：重构脚本生成逻辑，取消嵌套 Here-Doc 的前导缩进。
+            - **自解压与离线环境适配**：全面包含所需的核心 Binary、.apk/.ipk 依赖包。
           files: workspace/dist/*.run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
