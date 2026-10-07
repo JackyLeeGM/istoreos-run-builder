@@ -131,102 +131,103 @@ jobs:
 
                 INSTALL_SH="$PKG_DIR/install.sh"
                 cat << 'EOF' > "$INSTALL_SH"
-#!/bin/sh
-echo "========================================="
-echo "Starting universal installation..."
-echo "========================================="
-
-if [ -d "./cores" ]; then
-  echo "-> Deploying core binaries..."
-  mkdir -p /etc/openclash/core /usr/bin
-  [ -f "./cores/mihomo" ] && cp -f ./cores/mihomo /etc/openclash/core/clash_meta && cp -f ./cores/mihomo /usr/bin/mihomo && chmod +x /etc/openclash/core/clash_meta /usr/bin/mihomo 2>/dev/null || true
-  [ -f "./cores/sing-box" ] && cp -f ./cores/sing-box /usr/bin/sing-box && chmod +x /usr/bin/sing-box 2>/dev/null || true
-  [ -f "./cores/xray" ] && cp -f ./cores/xray /usr/bin/xray && chmod +x /usr/bin/xray 2>/dev/null || true
-fi
-
-if command -v apk >/dev/null 2>&1; then
-  echo "-> Detected APK package manager (iStoreOS 25.12+)"
-  apk update || true
-  echo "-> Installing system base tools..."
-  apk add --allow-untrusted ca-certificates curl wget unzip 2>/dev/null || true
-  
-  if [ -d "./packages" ]; then
-    echo "-> Phase 1: Pre-installing binary dependencies..."
-    for pkg in ./packages/*.apk; do
-      case "$pkg" in
-        *luci-app-*|*luci-i18n-*) ;;
-        *) [ -f "$pkg" ] && apk add --allow-untrusted "$pkg" 2>/dev/null || true ;;
-      esac
-    done
-
-    echo "-> Phase 2: Installing LuCI apps & language packages..."
-    for pkg in ./packages/*.apk; do
-      if [ -f "$pkg" ]; then
-        echo "Installing $pkg..."
-        apk add --allow-untrusted --force-non-repository --force-broken-world "$pkg" || true
-      fi
-    done
-  fi
-
-elif command -v opkg >/dev/null 2>&1; then
-  echo "-> Detected OPKG package manager (iStoreOS 24.10)"
-  opkg update || true
-  echo "-> Installing system dependencies..."
-  opkg install ca-certificates ca-bundle curl wget-ssl unzip --force-depends || true
-  echo "-> Installing IPK packages..."
-  if [ -d "./packages" ]; then
-    for pkg in ./packages/*.ipk; do
-      if [ -f "$pkg" ]; then
-        echo "Installing $pkg..."
-        opkg install "$pkg" --force-depends --force-overwrite || true
-      fi
-    done
-  fi
-else
-  echo "Error: Neither apk nor opkg package manager found!"
-  exit 1
-fi
-
-echo "-> Refreshing LuCI menu and services..."
-rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
-/etc/init.d/luci-reload restart 2>/dev/null || true
-/etc/init.d/rpcd restart 2>/dev/null || true
-
-echo "========================================="
-echo "Installation finished successfully!"
-echo "========================================="
-EOF
-                chmod +x "$INSTALL_SH"
-
-                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
                 
-                RUN_HEAD="dist/${RUN_FILENAME}"
-                cat << 'EOF' > "$RUN_HEAD"
-#!/bin/sh
-TMPDIR="/tmp/runpkg_$$"
-mkdir -p "$TMPDIR"
-MATCH=$(grep -n "^__PAYLOAD_BELOW__$" "$0" | cut -d: -f1)
-if [ -z "$MATCH" ]; then
-  echo "Error: Payload marker not found in .run file."
-  rm -rf "$TMPDIR"
-  exit 1
-fi
-PAYLOAD_LINE=$((MATCH + 1))
-tail -n +$PAYLOAD_LINE "$0" \vert{} tar -xz -C "$TMPDIR"
-cd "$TMPDIR"
-if [ -f "./install.sh" ]; then
-  chmod +x ./install.sh
-  ./install.sh
-  RES=$?
-else
-  echo "Error: install.sh not found inside package."
-  RES=1
-fi
-cd /
-rm -rf "$TMPDIR"
-exit $RES
-__PAYLOAD_BELOW__
-EOF
+                #!/bin/sh
+                echo "========================================="
+                echo "Starting universal installation..."
+                echo "========================================="
+
+                if [ -d "./cores" ]; then
+                  echo "-> Deploying core binaries..."
+                  mkdir -p /etc/openclash/core /usr/bin
+                  [ -f "./cores/mihomo" ] && cp -f ./cores/mihomo /etc/openclash/core/clash_meta && cp -f ./cores/mihomo /usr/bin/mihomo && chmod +x /etc/openclash/core/clash_meta /usr/bin/mihomo 2>/dev/null || true
+                  [ -f "./cores/sing-box" ] && cp -f ./cores/sing-box /usr/bin/sing-box && chmod +x /usr/bin/sing-box 2>/dev/null || true
+                  [ -f "./cores/xray" ] && cp -f ./cores/xray /usr/bin/xray && chmod +x /usr/bin/xray 2>/dev/null || true
+                fi
+
+                if command -v apk >/dev/null 2>&1; then
+                  echo "-> Detected APK package manager (iStoreOS 25.12+)"
+                  apk update || true
+                  echo "-> Installing system base tools..."
+                  apk add --allow-untrusted ca-certificates curl wget unzip 2>/dev/null || true
+                  
+                  if [ -d "./packages" ]; then
+                    echo "-> Phase 1: Pre-installing binary dependencies..."
+                    for pkg in ./packages/*.apk; do
+                      case "$pkg" in
+                        *luci-app-*|*luci-i18n-*) ;;
+                        *) [ -f "$pkg" ] && apk add --allow-untrusted "$pkg" 2>/dev/null || true ;;
+                      esac
+                    done
+
+                    echo "-> Phase 2: Installing LuCI apps & language packages..."
+                    for pkg in ./packages/*.apk; do
+                      if [ -f "$pkg" ]; then
+                        echo "Installing $pkg..."
+                        apk add --allow-untrusted --force-non-repository --force-broken-world "$pkg" || true
+                      fi
+                    done
+                  fi
+
+                elif command -v opkg >/dev/null 2>&1; then
+                  echo "-> Detected OPKG package manager (iStoreOS 24.10)"
+                  opkg update || true
+                  echo "-> Installing system dependencies..."
+                  opkg install ca-certificates ca-bundle curl wget-ssl unzip --force-depends || true
+                  echo "-> Installing IPK packages..."
+                  if [ -d "./packages" ]; then
+                    for pkg in ./packages/*.ipk; do
+                      if [ -f "$pkg" ]; then
+                        echo "Installing $pkg..."
+                        opkg install "$pkg" --force-depends --force-overwrite || true
+                      fi
+                    done
+                  fi
+                else
+                  echo "Error: Neither apk nor opkg package manager found!"
+                  exit 1
+                fi
+
+                echo "-> Refreshing LuCI menu and services..."
+                rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/*
+                /etc/init.d/luci-reload restart 2>/dev/null || true
+                /etc/init.d/rpcd restart 2>/dev/null || true
+
+                echo "========================================="
+                echo "Installation finished successfully!"
+                echo "========================================="
+                EOF
+                                chmod +x "$INSTALL_SH"
+
+                                tar -czf "${PLUGIN}.tar.gz" -C "$PKG_DIR" .
+                                
+                                RUN_HEAD="dist/${RUN_FILENAME}"
+                                cat << 'EOF' > "$RUN_HEAD"
+                #!/bin/sh
+                TMPDIR="/tmp/runpkg_$$"
+                mkdir -p "$TMPDIR"
+                MATCH=$(grep -n "^__PAYLOAD_BELOW__$" "$0" | cut -d: -f1)
+                if [ -z "$MATCH" ]; then
+                  echo "Error: Payload marker not found in .run file."
+                  rm -rf "$TMPDIR"
+                  exit 1
+                fi
+                PAYLOAD_LINE=$((MATCH + 1))
+                tail -n +$PAYLOAD_LINE "$0" \vert{} tar -xz -C "$TMPDIR"
+                cd "$TMPDIR"
+                if [ -f "./install.sh" ]; then
+                  chmod +x ./install.sh
+                  ./install.sh
+                  RES=$?
+                else
+                  echo "Error: install.sh not found inside package."
+                  RES=1
+                fi
+                cd /
+                rm -rf "$TMPDIR"
+                exit $RES
+                __PAYLOAD_BELOW__
+                EOF
 
                 cat "${PLUGIN}.tar.gz" >> "$RUN_HEAD"
                 chmod +x "$RUN_HEAD"
